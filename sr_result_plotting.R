@@ -149,7 +149,7 @@ p <- ggplot() +
   ) +
   scale_x_continuous(
     breaks = NULL,
-    expand = expansion(mult = c(0.03, 0.05))
+    expand = expansion(mult = c(0.04, 0.05))
   ) +
   scale_y_continuous(
     breaks       = seq(
