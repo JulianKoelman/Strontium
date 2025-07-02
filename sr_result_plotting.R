@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────
-#  Sr isotope plot — lines ordered 1→2→3 across each tooth cluster
+#  Sr isotope plot — alternating by tooth, new purples & legend fixes
 # ─────────────────────────────────────────────────────────────────────
-#  • ambient muted shades per individual
-#  • each tooth = its own cluster; lines sorted left→right
-#  • hollow white‐filled for Exclude=="Yes"
-#  • bold IDs on labels
-#  • legend: one solid dot per site
-#  • high‐res PNG output
+#  • new Alvastra: #5E7182 / #6C5D6F
+#  • new Korsnäs:  #8B4513 / #D4B290
+#  • alternate shade per newID (tooth‐cluster) within each site
+#  • hollow white‐filled circles for Exclude=="Yes"
+#  • bold IDs in on-plot labels
+#  • legend shows both shades per site
 # ─────────────────────────────────────────────────────────────────────
 #  Requires: tidyverse, readxl, colorspace, ggtext
 #  install.packages(c("tidyverse","readxl","colorspace","ggtext"))
@@ -19,25 +19,29 @@ library(tidyverse)
 library(colorspace)
 library(ggtext)
 
-# 1 ── Palettes & Parameters ─────────────────────────────────────────
-xlsx        <- "Sr_values_Project1.xlsx"
-sheet       <- 5
-site_order  <- c("Alvastra Dolmen","Fagervik","Korsnäs")
+# 1 ── Constants & your new palettes ─────────────────────────────────
+xlsx       <- "Sr_values_Project1.xlsx"
+sheet      <- 5
+site_order <- c("Alvastra Dolmen","Fagervik","Korsnäs")
 
+# NEW alternating palettes per site:
 alt_cols <- list(
-  "Alvastra Dolmen" = c("#6A7F92","#B2C2CC"),
-  "Fagervik"        = c("#4D774E"),
-  "Korsnäs"         = c("#8B4513","#D4B290")
+  "Alvastra Dolmen" = c("#5E7182","#6C5D6F"),  # slate-purple pair
+  "Fagervik"        = c("#4D774E"),           # single muted green
+  "Korsnäs"         = c("#8B4513","#D4B290")  # earth pair
 )
-site_cols <- map_chr(alt_cols, 1)   # first shade for legend
+
+# build legend entries: flatten shades and repeat site names
+legend_cols   <- unlist(alt_cols)
+legend_labels <- rep(names(alt_cols), lengths(alt_cols))
 
 indiv_gap    <- 2.0
-line_step    <- 0.08   # x‐offset per line number slot
+line_step    <- 0.08
 label_offset <- 0.00040
 
-# 2 ── Load & Basic Prep ─────────────────────────────────────────────
+# 2 ── Load & basic prep ─────────────────────────────────────────────
 raw <- read_excel(xlsx, sheet = sheet) %>%
-  fill(`Lab ID`,Tooth,Individual,Site, .direction = "down") %>%
+  fill(`Lab ID`,Tooth,Individual,Site, .direction="down") %>%
   filter(!is.na(`87Sr/86Sr`)) %>%
   mutate(
     Radiocarbon_date = as.numeric(Radiocarbon_date),
@@ -45,38 +49,16 @@ raw <- read_excel(xlsx, sheet = sheet) %>%
     ymin = `87Sr/86Sr` - `2SE`
   )
 
-# 3 ── Alternate Shade per Individual ────────────────────────────────
-indiv_shade <- raw %>%
-  distinct(Site, Individual) %>%
-  group_by(Site) %>%
-  mutate(i = row_number()) %>%
-  ungroup() %>%
-  mutate(
-    base_colour = map2_chr(Site, i, ~{
-      shades <- alt_cols[[.x]]
-      shades[((.y-1) %% length(shades)) + 1]
-    })
-  ) %>%
-  select(Site, Individual, base_colour)
-
-# 4 ── Build Study & Tooth Indices ───────────────────────────────────
+# 3 ── Build the newID (Individual:Tooth) and index clusters ────────
+# This also gives us the chronological order of individuals internally.
 study <- raw %>%
-  left_join(indiv_shade, by = c("Site","Individual")) %>%
-  group_by(Individual, Tooth) %>%
   mutate(
-    n_lines = n(),                     # how many ablation lines per tooth
-    line_idx = `Line Number`           # explicit line order
-  ) %>%
-  ungroup() %>%
-  mutate(
-    colour_pt = if_else(Exclude == "Yes",
-                        lighten(base_colour, 0.45),
-                        base_colour),
-    newID     = paste(Individual, Tooth, sep = ":")
+    newID = paste(Individual, Tooth, sep=":"),
+    # we'll later factor newID in the correct order
+    LineNumber = `Line Number`
   )
 
-# 5 ── X‐axis Centres for Each newID ────────────────────────────────
-# Order individuals oldest→youngest, then collect their teeth
+# Determine newID order: per individual in chrono order, then by Tooth
 indiv_order <- study %>%
   distinct(Individual, Site, Radiocarbon_date) %>%
   mutate(site_rank = match(Site, site_order)) %>%
@@ -86,22 +68,39 @@ indiv_order <- study %>%
 newID_order <- unlist(lapply(indiv_order, function(ind) {
   study %>%
     filter(Individual == ind) %>%
-    distinct(newID, Tooth) %>%
-    arrange(Tooth) %>%         # preserve lexicographic tooth order
+    distinct(Tooth, newID) %>%
+    arrange(Tooth) %>%
     pull(newID)
 }))
 
-# numeric centre for each newID
-newID_num <- setNames(seq_along(newID_order) * indiv_gap, newID_order)
-
-# Now compute x_plot for every row:
 study <- study %>%
+  mutate(newID = factor(newID, levels = newID_order))
+
+# 4 ── Assign an alternating shade per newID within each site ────────
+newID_table <- study %>%
+  distinct(Site, newID) %>%
+  group_by(Site) %>%
   mutate(
-    x_center = newID_num[newID],
-    x_plot   = x_center + (line_idx - (n_lines+1)/2) * line_step
+    shade_idx  = ((row_number() - 1) %% length(alt_cols[[first(Site)]])) + 1,
+    base_colour = alt_cols[[first(Site)]][shade_idx]
+  ) %>%
+  ungroup() %>%
+  select(Site, newID, base_colour)
+
+study <- study %>%
+  left_join(newID_table, by = c("Site","newID")) %>%
+  mutate(
+    colour_pt = if_else(Exclude == "Yes",
+                        lighten(base_colour, 0.45),
+                        base_colour),
+    # numeric x‐centre for each newID
+    x_center = as.numeric(newID) * indiv_gap,
+    # offset each ablation line by its LineNumber
+    x_plot   = x_center +
+      (LineNumber - (max(LineNumber) + 1)/2) * line_step
   )
 
-# 6 ── Label positions & rich‐text ──────────────────────────────────
+# 5 ── Build labels (one per newID) at top of each cluster ──────────
 label_pos <- study %>%
   group_by(newID, base_colour, Individual, Tooth, Radiocarbon_date) %>%
   summarise(
@@ -114,70 +113,85 @@ label_pos <- study %>%
                        Individual, Tooth, Radiocarbon_date)
   )
 
-# 7 ── Plot ─────────────────────────────────────────────────────────
+y_min <- floor(min(study$ymin) / 0.002) * 0.002
+y_max <- ceiling(max(study$ymax) / 0.002) * 0.002
+
+# 6 ── Plot ──────────────────────────────────────────────────────────
 p <- ggplot() +
-  # error-bars (all rows)
+  # 1) error-bars
   geom_errorbar(
     data = study,
-    aes(x = x_plot, y = `87Sr/86Sr`, ymin = ymin, ymax = ymax,
+    aes(x = x_plot, y = `87Sr/86Sr`,
+        ymin = ymin, ymax = ymax,
         colour = base_colour),
     width = 0, show.legend = FALSE
   ) +
-  # solid points (included)
+  # 2) solid points (Include)
   geom_point(
     data = filter(study, Exclude == "No"),
     aes(x = x_plot, y = `87Sr/86Sr`, colour = base_colour),
     shape = 16, size = 3, show.legend = FALSE
   ) +
-  # hollow points (excluded)
+  # 3) hollow points (Exclude)
   geom_point(
     data = filter(study, Exclude == "Yes"),
     aes(x = x_plot, y = `87Sr/86Sr`, colour = base_colour),
     shape = 21, fill = "white", stroke = 0.8, size = 3,
     show.legend = FALSE
   ) +
-  # labels atop each tooth cluster
+  # 4) rich-text labels
   geom_richtext(
     data = label_pos,
-    aes(x = x_center, y = y_top, label = label_md,
+    aes(x = x_center, y = y_top,
+        label = label_md,
         colour = base_colour),
     fill = NA, label.color = NA,
     size = 3.2, lineheight = 0.9,
     hjust = 0.5, vjust = 0,
     show.legend = FALSE
   ) +
-  # dummy layer for legend dots
+  # 5) dummy layer to produce BOTH shades per site in the legend
   geom_point(
-    data = tibble(colour = site_cols),
+    data = tibble(colour = legend_cols),
     aes(x = -Inf, y = -Inf, colour = colour),
     shape = 16, size = 4, inherit.aes = FALSE
   ) +
   scale_colour_identity(
     name   = "Site",
-    breaks = unname(site_cols),
-    labels = names(site_cols),
+    breaks = legend_cols,
+    labels = legend_labels,
     guide  = guide_legend(override.aes = list(shape = 16, size = 4))
   ) +
   scale_x_continuous(
-    breaks = newID_num,
-    labels = newID_order,
-    expand = expansion(mult = c(0.03, 0.05))
+    breaks = as.numeric(factor(newID_order)) * indiv_gap,
+#    labels = newID_order,
+#    labels = sub(":.*", "", newID_order),
+    labels = NULL,
+    expand = expansion(mult = c(0.04, 0.05))
   ) +
+  scale_y_continuous(
+    breaks       = seq(y_min, y_max, by = 0.01),
+    minor_breaks = seq(y_min, y_max, by = 0.002),
+    expand       = expansion(mult = c(0.03, 0.08))
+  ) +
+  # 2) put back your x‐axis title
   labs(
-    x = "Individual:Tooth clusters (chronological by individual)",
-    y = expression(""^{87}*Sr/""^{86}*Sr),
-    title = "Strontium-isotope measurements – all teeth",
-    subtitle = "Lines ordered L→R by Line Number; hollow = Exclude “Yes”"
+    x = "Individuals (chronological)",
+    y = expression(""^{87}*Sr/""^{86}*Sr)
   ) +
+  # 3) style major (0.01) vs minor (0.002) grids
   theme_classic(base_size = 13) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
-    legend.position = "right",
-    panel.grid.major.y = element_line(linetype = "dotted", linewidth = 0.3)
+    panel.grid.major.y = element_line(linetype = 'solid', color = "grey90", size = 0.4),
+    panel.grid.minor.y = element_line(linetype = 'dashed' , color = "grey90", size = 0.2),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.ticks.x       = element_blank(),          # you already had this
+    axis.text.x        = element_text(angle = 90, hjust = 1)
   )
 
 print(p)
 
-# Save high-res PNG
-ggsave("Sr_plot_teeth_clusters_ordered.png",
+# 7 ── Export high–res PNG ───────────────────────────────────────────
+ggsave("Sr_plot.png",
        p, width = 12, height = 7, dpi = 300)
