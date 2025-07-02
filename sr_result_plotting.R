@@ -173,10 +173,10 @@ p <- ggplot() +
   theme(
     legend.position    = "right",
     plot.margin        = margin(5, 60, 5, 5, "pt"),
-    axis.text.x        = element_text(angle = 45, hjust = 1, vjust = 1),
+    axis.text.x        = element_text(angle = 90, hjust = 1, vjust = 1),
     axis.ticks.x       = element_blank(),
-    panel.grid.major.y = element_line(color = "grey70", size = 0.4),
-    panel.grid.minor.y = element_line(color = "grey90", size = 0.2),
+    panel.grid.major.y = element_line(color = "grey90", size = 0.4, linetype = "solid"),
+    panel.grid.minor.y = element_line(color = "grey80", size = 0.2, linetype = "dotted"),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank()
   )
