@@ -10,6 +10,7 @@ library(colorspace)
 library(ggtext)
 library(ggbeeswarm)
 library(RColorBrewer)
+library(ggnewscale)
 
 # 1 ── Constants & palettes ──────────────────────────────────────────
 xlsx       <- "Sr_values_Project1.xlsx"
@@ -113,7 +114,7 @@ pub_cols  <- setNames(
 )
 
 max_center  <- max(study$x_center)
-pub_offset  <- indiv_gap * 2
+pub_offset  <- indiv_gap * 1
 pub_gap     <- indiv_gap * 0.5
 pub_centers <- max_center + pub_offset + pub_gap * (seq_along(pub_sites)-1)
 
@@ -135,6 +136,27 @@ y_minor  <- seq(
   ceiling(all_y[2]/0.002)*0.002,
   by = 0.002
 )
+
+
+region_df <- pub_df %>%
+  distinct(Region, x_center_pub) %>%
+  group_by(Region) %>%
+  summarise(
+    x = mean(x_center_pub),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    y      = max(all_y) + 2*label_offset,       # just above all points
+    label  = Region
+  )
+
+# choose one colour per Region (e.g. Set2 palette)
+regions     <- region_df$Region
+region_cols <- setNames(
+  brewer.pal(length(regions), "Set2"),
+  regions
+)
+
 
 # 9 ── Plot ───────────────────────────────────────────────────────────
 p <- ggplot() +
@@ -161,7 +183,7 @@ p <- ggplot() +
     aes(x=x_center, y=y_top, label=label_md,
         colour=base_colour),
     fill=NA, label.color=NA,
-    size=3.2, lineheight=0.9,
+    size=3, lineheight=0.9,
     hjust=0.5, vjust=0,
     show.legend=FALSE
   ) +
@@ -181,12 +203,10 @@ p <- ggplot() +
     aes(x=x_center_pub, y=Sr_ratio_pub, fill=Site_pub),
     shape      = 21, colour='black', stroke=NA,
     groupOnX   = TRUE,
-    width      = line_step*1.5,
-    size       = 3, alpha=0.8,
+    width      = line_step*4,
+    size       = 2.5, alpha=0.8,
     show.legend=TRUE
   ) +
-  
-
   
   # Published legend
   scale_fill_manual(
@@ -195,12 +215,12 @@ p <- ggplot() +
     guide  = guide_legend(override.aes=list(shape=21,
                                             size=4,
                                             colour=NA),
-                                            order=2)
+                          order=2)
   ) +
   
   # combine axes limits & grid
   scale_x_continuous(breaks=NULL,
-                     expand=expansion(mult=c(0.06,0.03))) +
+                     expand=expansion(mult=c(0.02,0.01))) +
   scale_y_continuous(
     limits      = all_y,
     breaks      = y_breaks,
@@ -211,8 +231,6 @@ p <- ggplot() +
   labs(
     x        = NULL,
     y        = expression(""^{87}*Sr/""^{86}*Sr),
-    title    = "Strontium-isotope measurements – all teeth",
-    subtitle = "Study data (left) + Published human swarms (right)"
   ) +
   coord_cartesian(clip="off") +
   theme_classic(base_size=13) +
@@ -231,4 +249,5 @@ print(p)
 
 # 10 ── Export PNG
 ggsave("Sr_plot_with_published_swarm.png", plot=p,
-       width=14, height=7, dpi=300)
+       width=18, height=7, dpi=300)
+
